@@ -15,6 +15,20 @@ using std::placeholders::_2;
 
 TeachServer::TeachServer() : Node("teach_server")
 {
+ 
+    // create subscriptions
+    img_color_sub_ = this->create_subscription<sensor_msgs::msg::Image>(
+        "/camera_down/color/image_raw_rfps", 10,
+        std::bind(&TeachServer::img_color_callback, this, _1));
+
+    img_depth_sub_ = this->create_subscription<sensor_msgs::msg::Image>(
+        "/camera_down/depth/image_raw_rfps", 10,
+        std::bind(&TeachServer::img_depth_callback, this, _1));
+
+    odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
+        "/odom", 10,
+        std::bind(&TeachServer::odom_callback, this, _1));
+
     // Create the action server.
     action_server_ = rclcpp_action::create_server<Teach>(
         this,
@@ -23,6 +37,25 @@ TeachServer::TeachServer() : Node("teach_server")
         std::bind(&TeachServer::handle_cancel, this, _1),
         std::bind(&TeachServer::handle_accepted, this, _1)
     );
+}
+
+// callbacks
+void TeachServer::img_color_callback(const sensor_msgs::msg::Image::SharedPtr msg)
+{
+    // Process the color image
+    RCLCPP_INFO(this->get_logger(), "Received color image");
+}
+
+void TeachServer::img_depth_callback(const sensor_msgs::msg::Image::SharedPtr msg)
+{
+    // Process the depth image
+    RCLCPP_INFO(this->get_logger(), "Received depth image");
+}
+
+void TeachServer::odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg)
+{
+    // Process the odometry data
+    RCLCPP_INFO(this->get_logger(), "Received odometry data");
 }
 
 rclcpp_action::GoalResponse TeachServer::handle_goal(

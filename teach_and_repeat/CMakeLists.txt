@@ -10,6 +10,8 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
 
 # Find the interface package
 find_package(teach_and_repeat_interfaces REQUIRED)
@@ -23,6 +25,8 @@ ament_target_dependencies(teach_server
   rclcpp
   rclcpp_action
   std_msgs
+  sensor_msgs
+  nav_msgs
   teach_and_repeat_interfaces
 )
 
