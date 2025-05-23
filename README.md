@@ -1,4 +1,4 @@
-# teach_and_repeat
+# Teach and Repeat
 
 ## Overview
 
