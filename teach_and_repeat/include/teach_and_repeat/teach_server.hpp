@@ -43,7 +43,7 @@ using namespace std::chrono_literals;
 using std::placeholders::_1;
 using std::placeholders::_2;
 
-#define SYNCRONIZED_SUBS
+#undef SYNCRONIZED_SUBS
 #define PUB_KEYPOINTS_IMG
 
 class TeachServer : public rclcpp::Node
@@ -86,6 +86,10 @@ private:
     cv::Mat camera_intrinsics_;
     cv::Mat distortion_coeffs_;
 
+    std::shared_ptr<rclcpp::Subscription<sensor_msgs::msg::CameraInfo>> camera_info_sub_;
+    void camera_info_callback(const sensor_msgs::msg::CameraInfo::SharedPtr msg);
+    void save_frames_cache_();
+
 #ifdef SYNCRONIZED_SUBS
     std::shared_ptr<message_filters::Subscriber<sensor_msgs::msg::Image>> img_color_sub_;
     std::shared_ptr<message_filters::Subscriber<sensor_msgs::msg::Image>> img_depth_sub_;
@@ -99,12 +103,10 @@ private:
 #else
     std::shared_ptr<rclcpp::Subscription<sensor_msgs::msg::Image>> img_color_sub_;
     std::shared_ptr<rclcpp::Subscription<sensor_msgs::msg::Image>> img_depth_sub_;
-    std::shared_ptr<rclcpp::Subscription<sensor_msgs::msg::CameraInfo>> camera_info_sub_;
     std::shared_ptr<rclcpp::Subscription<nav_msgs::msg::Odometry>> odom_sub_;
 
     void img_color_callback(const sensor_msgs::msg::Image::SharedPtr msg);
     void img_depth_callback(const sensor_msgs::msg::Image::SharedPtr msg);
-    void camera_info_callback(const sensor_msgs::msg::CameraInfo::SharedPtr msg);
     void odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg);
 #endif 
 

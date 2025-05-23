@@ -62,3 +62,9 @@ public:
     static constexpr int patchSize_ = 31;
     static constexpr int fastThreshold_ = 20;
 };
+
+namespace teach_and_repeat
+{
+    bool saveFrame(const Frame& frame, cv::FileStorage& fs);
+    bool loadFrame(Frame& frame, const cv::FileNode& fn);
+}
