@@ -160,9 +160,8 @@ void TeachServer::execute_action(const std::shared_ptr<GoalHandleTeach> goal_han
         keypoints_img_pub_->publish(*keypoints_img_msg);
 #endif
 
-        // TODO: calculate 3d world-cordinates of keypoints
-        // TODO: use camera cal to get 3d points in world frame?
-        // TODO: cache keypoints + odometry
+        // TODO: use camera cal to get 3d points in world frame
+        // TODO: cache Frames (keypoints + descriptiors) + odometry
 
         feedback->n_keyframes = ++frame_count;
         goal_handle->publish_feedback(feedback);
