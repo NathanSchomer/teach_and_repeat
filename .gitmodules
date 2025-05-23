@@ -1,3 +1,3 @@
-[submodule "DBoW2"]
-	path = DBoW2
+[submodule "dbow2"]
+	path = dbow2
 	url = https://github.com/dorian3d/DBoW2.git
