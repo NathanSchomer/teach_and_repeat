@@ -10,6 +10,10 @@
   <maintainer email="nathans@glidance.io">nathan</maintainer>
   <license>BSD-2-Clause</license>
 
+  <depend>cv_bridge</depend>
+  <depend>image_transport</depend>
+  <depend>sensor_msgs</depend>
+
   <!-- Build tool dependencies -->
   <buildtool_depend>ament_cmake</buildtool_depend>
 
