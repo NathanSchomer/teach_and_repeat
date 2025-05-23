@@ -52,7 +52,7 @@ public:
     std::vector<cv::KeyPoint> udistortedKeyPoints_;
 
     // ORB Parameters (compile-time constants)
-    static constexpr int nFeatures_ = 1000;
+    static constexpr int nFeatures_ =  1000;
     static constexpr float scaleFactor_ = 1.2f;
     static constexpr int nLevels_ = 8;
     static constexpr int edgeThreshold_ = 31;
