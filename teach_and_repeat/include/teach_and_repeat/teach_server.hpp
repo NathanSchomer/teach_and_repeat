@@ -31,16 +31,19 @@
 
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/image.hpp>
+#include <sensor_msgs/msg/camera_info.hpp>
 #include <cv_bridge/cv_bridge.hpp>
 #include <opencv2/opencv.hpp>
 
 #include "teach_and_repeat_interfaces/action/teach.hpp"
+#include "teach_and_repeat/frame.hpp"
+#include "DBoW2/DBoW2.h"
 
 using namespace std::chrono_literals;
 using std::placeholders::_1;
 using std::placeholders::_2;
 
-#undef SYNCRONIZED_SUBS
+#define SYNCRONIZED_SUBS
 #define PUB_KEYPOINTS_IMG
 
 class TeachServer : public rclcpp::Node
@@ -76,7 +79,12 @@ private:
     // define parameters 
     rclcpp::Parameter img_color_topic_;
     rclcpp::Parameter img_depth_topic_;
+    rclcpp::Parameter camera_info_topic_;
     rclcpp::Parameter odom_topic_;
+
+    std::vector<std::shared_ptr<Frame>> frames_cache_;
+    cv::Mat camera_intrinsics_;
+    cv::Mat distortion_coeffs_;
 
 #ifdef SYNCRONIZED_SUBS
     std::shared_ptr<message_filters::Subscriber<sensor_msgs::msg::Image>> img_color_sub_;
@@ -91,10 +99,12 @@ private:
 #else
     std::shared_ptr<rclcpp::Subscription<sensor_msgs::msg::Image>> img_color_sub_;
     std::shared_ptr<rclcpp::Subscription<sensor_msgs::msg::Image>> img_depth_sub_;
+    std::shared_ptr<rclcpp::Subscription<sensor_msgs::msg::CameraInfo>> camera_info_sub_;
     std::shared_ptr<rclcpp::Subscription<nav_msgs::msg::Odometry>> odom_sub_;
 
     void img_color_callback(const sensor_msgs::msg::Image::SharedPtr msg);
     void img_depth_callback(const sensor_msgs::msg::Image::SharedPtr msg);
+    void camera_info_callback(const sensor_msgs::msg::CameraInfo::SharedPtr msg);
     void odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg);
 #endif 
 

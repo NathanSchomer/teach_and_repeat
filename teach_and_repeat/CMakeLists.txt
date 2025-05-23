@@ -17,6 +17,8 @@ find_package(message_filters REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(teach_and_repeat_interfaces REQUIRED)
+find_package(dbow2 REQUIRED)
+find_package(tf2 REQUIRED)
 
 # Include directories
 include_directories(
@@ -26,7 +28,10 @@ include_directories(
 )
 
 # Add executable
-add_executable(teach_server src/teach_server.cpp)
+add_executable(teach_server
+  src/teach_server.cpp
+  src/frame.cpp
+)
 
 # Link dependencies
 ament_target_dependencies(teach_server
@@ -38,6 +43,8 @@ ament_target_dependencies(teach_server
   message_filters
   cv_bridge
   teach_and_repeat_interfaces
+  dbow2
+  tf2
 )
 
 # Link OpenCV explicitly
