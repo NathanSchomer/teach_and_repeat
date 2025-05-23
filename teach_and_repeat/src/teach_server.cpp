@@ -19,18 +19,25 @@ TeachServer::TeachServer() : Node("teach_server")
     // setup parameters
     this->declare_parameter("img_color_topic", "/camera_down/color/image_raw_rfps");
     this->declare_parameter("img_depth_topic", "/camera_down/depth/image_raw_rfps");
+    this->declare_parameter("camera_intrinsics", "/camera_down/color/camera_info");
     this->declare_parameter("odom_topic", "/odom");
 
     // get parameters
     this->get_parameter("img_color_topic", img_color_topic_);
     this->get_parameter("img_depth_topic", img_depth_topic_);
+    this->get_parameter("camera_intrinsics", camera_info_topic_);
     this->get_parameter("odom_topic", odom_topic_);
+
+    // subscribe to camera info 
+    camera_info_sub_ = this->create_subscription<sensor_msgs::msg::CameraInfo>(
+        camera_info_topic_.as_string(), 10,
+        std::bind(&TeachServer::camera_info_callback, this, _1));
 
 #ifdef SYNCRONIZED_SUBS
     img_color_sub_ = std::make_shared<message_filters::Subscriber<sensor_msgs::msg::Image>>(
-        this, "/camera_down/color/image_raw_rfps", rmw_qos_profile_sensor_data);
+        this, img_color_topic_.as_string(), rmw_qos_profile_sensor_data);
     img_depth_sub_ = std::make_shared<message_filters::Subscriber<sensor_msgs::msg::Image>>(
-        this, "/camera_down/depth/image_raw_rfps", rmw_qos_profile_sensor_data);
+        this, img_depth_topic.as_string(), rmw_qos_profile_sensor_data);
 
     uint32_t queue_size = 50;
     sync_ = std::make_shared<message_filters::Synchronizer<message_filters::sync_policies::ApproximateTime<
@@ -95,6 +102,14 @@ void TeachServer::handle_accepted(const std::shared_ptr<GoalHandleTeach> goal_ha
     std::thread{execute_in_thread}.detach();
 }
 
+void TeachServer::camera_info_callback(const sensor_msgs::msg::CameraInfo::SharedPtr msg)
+{
+    camera_intrinsics_ = cv::Mat(3, 3, CV_64F, msg->k.data()).clone();
+    distortion_coeffs_ = cv::Mat(1, 5, CV_64F, msg->d.data()).clone();
+    RCLCPP_INFO(this->get_logger(), "Received camera intrinsics");
+    camera_info_sub_.reset();
+}
+
 #ifdef SYNCRONIZED_SUBS
 void TeachServer::SyncCallback(
     const sensor_msgs::msg::Image::ConstSharedPtr& color_msg,
@@ -125,7 +140,7 @@ void TeachServer::execute_action(const std::shared_ptr<GoalHandleTeach> goal_han
 {
     RCLCPP_INFO(this->get_logger(), "Executing teach request");
 
-    rclcpp::Rate loop_rate(10);
+    rclcpp::Rate loop_rate(1);
     auto feedback = std::make_shared<Teach::Feedback>();
     auto result = std::make_shared<Teach::Result>();
     int64_t frame_count = 0;
@@ -142,17 +157,33 @@ void TeachServer::execute_action(const std::shared_ptr<GoalHandleTeach> goal_han
             continue;
         }
 
-        // calculate ORB keypoints and descriptors on the color image
+        // Convert ROS image message to cv::Mat (BGR8)
         cv::Mat color_image = cv_bridge::toCvCopy(last_color_image_, sensor_msgs::image_encodings::BGR8)->image;
-        cv::Mat depth_image = cv_bridge::toCvCopy(last_depth_image_, sensor_msgs::image_encodings::TYPE_16UC1)->image;
-        cv::Mat descriptors;
-        std::vector<cv::KeyPoint> keypoints;
-        cv::Ptr<cv::ORB> orb = cv::ORB::create();
-        orb->detectAndCompute(color_image, cv::noArray(), keypoints, descriptors);
+
+        rclcpp::Time now = this->now();
+        double timestamp = static_cast<double>(now.nanoseconds()) / 1e9;
+
+        // TODO: use hash instead
+        size_t frame_id = static_cast<size_t>(timestamp * 1e6); // convert to microseconds
+
+        // Create a Frame with the image, timestamp, and camera calibration
+        auto frame = std::make_shared<Frame>(
+            color_image,
+            frame_id,
+            timestamp,
+            camera_intrinsics_,
+            distortion_coeffs_,
+            last_odom_->pose.pose
+        );
+
+        RCLCPP_INFO(this->get_logger(), "Frame %zu received at time %.2f", frame_id, timestamp);
+
+        // Cache frame and odometry
+        frames_cache_.push_back(frame);
 
 #ifdef PUB_KEYPOINTS_IMG
         cv::Mat img_keypoints;
-        cv::drawKeypoints(color_image, keypoints, img_keypoints, cv::Scalar(0, 255, 0), cv::DrawMatchesFlags::DEFAULT);
+        cv::drawKeypoints(color_image, frame->keypoints_, img_keypoints, cv::Scalar(0, 255, 0), cv::DrawMatchesFlags::DEFAULT);
         auto keypoints_img_msg = cv_bridge::CvImage(
             last_color_image_->header, sensor_msgs::image_encodings::BGR8, img_keypoints).toImageMsg();
         keypoints_img_msg->header.stamp = last_color_image_->header.stamp;
@@ -161,7 +192,6 @@ void TeachServer::execute_action(const std::shared_ptr<GoalHandleTeach> goal_han
 #endif
 
         // TODO: use camera cal to get 3d points in world frame
-        // TODO: cache Frames (keypoints + descriptiors) + odometry
 
         feedback->n_keyframes = ++frame_count;
         goal_handle->publish_feedback(feedback);
