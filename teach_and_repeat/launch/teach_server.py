@@ -15,8 +15,8 @@ def generate_launch_description():
                 executable="teach_server",
                 name="teach_server",
                 parameters=[{
-                    "img_color_topic": "/camera_down/color/image_raw_rfps",
-                    "img_depth_topic": "/camera_down/depth/image_raw_rfps",
+                    "img_color_topic": "/camera_down/color/image_raw",
+                    "img_depth_topic": "/camera_down/depth/image_raw",
                     "odom_topic": "/odom"        
                              }],
             ),

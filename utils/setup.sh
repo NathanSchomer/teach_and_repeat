@@ -12,8 +12,8 @@ git submodule update --init --recursive
 
 # Copy modified files into dbow2 submodule folder
 echo "Copying modified build files into dbow2 submodule..."
-cp "./utils/dbow2/CMakeLists.txt" "./dbow2/CMakeLists.txt"
-cp "./utils/dbow2/package.xml" "./dbow2/package.xml"
+cp "./utils/dbow2_CMakeLists.txt" "./dbow2/CMakeLists.txt"
+cp "./utils/dbow2_package.xml" "./dbow2/package.xml"
 
 cd ../../
 

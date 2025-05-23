@@ -17,10 +17,11 @@ using std::placeholders::_3;
 TeachServer::TeachServer() : Node("teach_server")
 {
     // setup parameters
-    this->declare_parameter("img_color_topic", "/camera_down/color/image_raw_rfps");
-    this->declare_parameter("img_depth_topic", "/camera_down/depth/image_raw_rfps");
+    this->declare_parameter("img_color_topic", "/camera_down/color/image_raw");
+    this->declare_parameter("img_depth_topic", "/camera_down/depth/image_raw");
     this->declare_parameter("camera_intrinsics", "/camera_down/color/camera_info");
     this->declare_parameter("odom_topic", "/odom");
+    
 
     // get parameters
     this->get_parameter("img_color_topic", img_color_topic_);
@@ -34,12 +35,13 @@ TeachServer::TeachServer() : Node("teach_server")
         std::bind(&TeachServer::camera_info_callback, this, _1));
 
 #ifdef SYNCRONIZED_SUBS
+    // TODO: broken and idk why :(
     img_color_sub_ = std::make_shared<message_filters::Subscriber<sensor_msgs::msg::Image>>(
         this, img_color_topic_.as_string(), rmw_qos_profile_sensor_data);
     img_depth_sub_ = std::make_shared<message_filters::Subscriber<sensor_msgs::msg::Image>>(
-        this, img_depth_topic.as_string(), rmw_qos_profile_sensor_data);
+        this, img_depth_topic_.as_string(), rmw_qos_profile_sensor_data);
 
-    uint32_t queue_size = 50;
+    uint32_t queue_size = 10000;
     sync_ = std::make_shared<message_filters::Synchronizer<message_filters::sync_policies::ApproximateTime<
         sensor_msgs::msg::Image, sensor_msgs::msg::Image>>>(
             message_filters::sync_policies::ApproximateTime<
@@ -136,6 +138,26 @@ void TeachServer::odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg)
 }
 #endif
 
+void TeachServer::save_frames_cache_()
+{
+    if (frames_cache_.empty()) {
+        RCLCPP_WARN(this->get_logger(), "No frames to save");
+        return;
+    }
+
+    // todo add parameter for save path
+    cv::FileStorage fs("frames.yml", cv::FileStorage::WRITE);
+    fs << "frames" << "[";
+    for (const auto& frame : frames_cache_) {
+        RCLCPP_INFO(this->get_logger(), "Saving frame %zu", frame->id_);
+        fs << "{";
+        teach_and_repeat::saveFrame(*frame, fs);
+        fs << "}";
+    }
+    fs << "]";
+    fs.release();
+}
+
 void TeachServer::execute_action(const std::shared_ptr<GoalHandleTeach> goal_handle)
 {
     RCLCPP_INFO(this->get_logger(), "Executing teach request");
@@ -147,6 +169,7 @@ void TeachServer::execute_action(const std::shared_ptr<GoalHandleTeach> goal_han
 
     while (rclcpp::ok()) {
         if (goal_handle->is_canceling()) {
+            save_frames_cache_();
             goal_handle->canceled(result);
             return;
         }
@@ -201,9 +224,6 @@ void TeachServer::execute_action(const std::shared_ptr<GoalHandleTeach> goal_han
 
     if (rclcpp::ok()) {
         RCLCPP_INFO(this->get_logger(), "Teach request completed successfully");
-
-        // TODO: save cached keypoints + odometry to file
-
         auto result = std::make_shared<Teach::Result>();
         result->saved_path = true;
         goal_handle->succeed(result);

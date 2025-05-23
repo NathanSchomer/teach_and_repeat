@@ -79,10 +79,73 @@ void Frame::UndistortKeyPoints()
 
 void Frame::ComputeBoW()
 {
-    // if (!orbExtractor_) return; // check extractor is set
-
-    // bowVec_.clear();
-    // featVec_.clear();
-    // orbExtractor_->ComputeBoW(descriptors_, bowVec_, featVec_);
+    // TODO
     return;
+}
+
+bool teach_and_repeat::saveFrame(const Frame& frame, cv::FileStorage& fs)
+{
+    if (!fs.isOpened())
+        return false;
+
+    fs << "Frame" << "{";
+
+    fs << "id" << (int)frame.id_;  // cast to int for YAML friendliness
+    fs << "timestamp" << frame.timeStamp_;
+
+    // Save cv::Mat data
+    fs << "intrinsicMat" << frame.intrinsicMat_;
+    fs << "distCoef" << frame.distCoef_;
+
+    // Save pose (serialize each field manually or create helper function)
+    const auto& p = frame.pose_;
+    fs << "pose" << "{";
+    fs << "position_x" << p.position.x;
+    fs << "position_y" << p.position.y;
+    fs << "position_z" << p.position.z;
+    fs << "orientation_x" << p.orientation.x;
+    fs << "orientation_y" << p.orientation.y;
+    fs << "orientation_z" << p.orientation.z;
+    fs << "orientation_w" << p.orientation.w;
+    fs << "}";
+
+    // Save keypoints and descriptors
+    fs << "keypoints" << frame.keypoints_;
+    fs << "descriptors" << frame.descriptors_;
+
+    fs << "}";
+
+    return true;
+}
+
+bool teach_and_repeat::loadFrame(Frame& frame, const cv::FileNode& fn)
+{
+    if (fn.empty())
+        return false;
+
+    int id = 0;
+    fn["id"] >> id;
+    frame.id_ = static_cast<size_t>(id);
+
+    fn["timestamp"] >> frame.timeStamp_;
+    fn["intrinsicMat"] >> frame.intrinsicMat_;
+    fn["distCoef"] >> frame.distCoef_;
+
+    auto poseNode = fn["pose"];
+    if (!poseNode.empty())
+    {
+        poseNode["position_x"] >> frame.pose_.position.x;
+        poseNode["position_y"] >> frame.pose_.position.y;
+        poseNode["position_z"] >> frame.pose_.position.z;
+
+        poseNode["orientation_x"] >> frame.pose_.orientation.x;
+        poseNode["orientation_y"] >> frame.pose_.orientation.y;
+        poseNode["orientation_z"] >> frame.pose_.orientation.z;
+        poseNode["orientation_w"] >> frame.pose_.orientation.w;
+    }
+
+    fn["keypoints"] >> frame.keypoints_;
+    fn["descriptors"] >> frame.descriptors_;
+
+    return true;
 }
