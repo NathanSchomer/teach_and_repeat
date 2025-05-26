@@ -20,6 +20,7 @@
 #include <chrono>
 #include <memory>
 #include <functional>
+#include <vector>
 #include <rmw/qos_profiles.h>
 
 #include <sensor_msgs/msg/image.hpp>
@@ -38,6 +39,7 @@
 #include "teach_and_repeat_interfaces/action/teach.hpp"
 #include "teach_and_repeat/frame.hpp"
 #include "DBoW2/DBoW2.h"
+#include "ament_index_cpp/get_package_share_directory.hpp"
 
 using namespace std::chrono_literals;
 using std::placeholders::_1;
@@ -49,6 +51,8 @@ using std::placeholders::_2;
 class TeachServer : public rclcpp::Node
 {
 private:
+    OrbDatabase orb_db_;
+
     using Teach = teach_and_repeat_interfaces::action::Teach;
     using GoalHandleTeach = rclcpp_action::ServerGoalHandle<Teach>;
 
@@ -81,6 +85,7 @@ private:
     rclcpp::Parameter img_depth_topic_;
     rclcpp::Parameter camera_info_topic_;
     rclcpp::Parameter odom_topic_;
+    rclcpp::Parameter vocabulary_path_;
 
     std::vector<std::shared_ptr<Frame>> frames_cache_;
     cv::Mat camera_intrinsics_;

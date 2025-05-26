@@ -14,6 +14,7 @@ find_package(action_msgs REQUIRED)
 # Generate the action
 rosidl_generate_interfaces(${PROJECT_NAME}
   "action/Teach.action"
+  "action/CreateVocab.action"
   DEPENDENCIES builtin_interfaces action_msgs
 )
 

@@ -10,9 +10,9 @@
 
 #include "teach_and_repeat/teach_server.hpp"
 
-using std::placeholders::_1;
-using std::placeholders::_2;
-using std::placeholders::_3;
+// using std::placeholders::_1;
+// using std::placeholders::_2;
+// using std::placeholders::_3;
 
 TeachServer::TeachServer() : Node("teach_server")
 {
@@ -21,13 +21,22 @@ TeachServer::TeachServer() : Node("teach_server")
     this->declare_parameter("img_depth_topic", "/camera_down/depth/image_raw");
     this->declare_parameter("camera_intrinsics", "/camera_down/color/camera_info");
     this->declare_parameter("odom_topic", "/odom");
+    this->declare_parameter("vocabulary_path", "vocab/output.yml.gz");
     
-
     // get parameters
     this->get_parameter("img_color_topic", img_color_topic_);
     this->get_parameter("img_depth_topic", img_depth_topic_);
     this->get_parameter("camera_intrinsics", camera_info_topic_);
     this->get_parameter("odom_topic", odom_topic_);
+    this->get_parameter("vocabulary_path", vocabulary_path_);
+
+    // Load ORB vocabulary and initialize database
+    std::string vocab_path = ament_index_cpp::get_package_share_directory("teach_and_repeat") + "/" + vocabulary_path_.as_string();
+    RCLCPP_INFO(this->get_logger(), "Loading vocabulary from: %s", vocab_path.c_str());
+    OrbVocabulary vocab(vocab_path);
+
+    RCLCPP_INFO(this->get_logger(), "Vocabulary loaded with %u words", vocab.size());
+    orb_db_ = OrbDatabase(vocab, false, 0); // false = do not use direct index
 
     // subscribe to camera info 
     camera_info_sub_ = this->create_subscription<sensor_msgs::msg::CameraInfo>(
@@ -140,22 +149,26 @@ void TeachServer::odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg)
 
 void TeachServer::save_frames_cache_()
 {
-    if (frames_cache_.empty()) {
-        RCLCPP_WARN(this->get_logger(), "No frames to save");
-        return;
-    }
+    RCLCPP_INFO(this->get_logger(), "Saving DBOW2 database to disk.");
+    orb_db_.save("dbow2_database.yml.gz");
+    // TODO: save database
 
-    // todo add parameter for save path
-    cv::FileStorage fs("frames.yml", cv::FileStorage::WRITE);
-    fs << "frames" << "[";
-    for (const auto& frame : frames_cache_) {
-        RCLCPP_INFO(this->get_logger(), "Saving frame %zu", frame->id_);
-        fs << "{";
-        teach_and_repeat::saveFrame(*frame, fs);
-        fs << "}";
-    }
-    fs << "]";
-    fs.release();
+    // if (frames_cache_.empty()) {
+    //     RCLCPP_WARN(this->get_logger(), "No frames to save");
+    //     return;
+    // }
+
+    // // todo add parameter for save path
+    // cv::FileStorage fs("frames.yml", cv::FileStorage::WRITE);
+    // fs << "frames" << "[";
+    // for (const auto& frame : frames_cache_) {
+    //     RCLCPP_INFO(this->get_logger(), "Saving frame %zu", frame->id_);
+    //     fs << "{";
+    //     teach_and_repeat::saveFrame(*frame, fs);
+    //     fs << "}";
+    // }
+    // fs << "]";
+    // fs.release();
 }
 
 void TeachServer::execute_action(const std::shared_ptr<GoalHandleTeach> goal_handle)
@@ -167,6 +180,15 @@ void TeachServer::execute_action(const std::shared_ptr<GoalHandleTeach> goal_han
     auto result = std::make_shared<Teach::Result>();
     int64_t frame_count = 0;
 
+    // Initialize ORB feature detector
+    cv::Ptr<cv::ORB> orb = cv::ORB::create();
+    cv::Mat mask;
+    std::vector<cv::KeyPoint> keypoints;
+    cv::Mat descriptors;
+    cv::Mat gray_image;
+    unsigned int frame_id = -1;
+
+    // ROS Loop
     while (rclcpp::ok()) {
         if (goal_handle->is_canceling()) {
             save_frames_cache_();
@@ -186,27 +208,31 @@ void TeachServer::execute_action(const std::shared_ptr<GoalHandleTeach> goal_han
         rclcpp::Time now = this->now();
         double timestamp = static_cast<double>(now.nanoseconds()) / 1e9;
 
-        // TODO: use hash instead
-        size_t frame_id = static_cast<size_t>(timestamp * 1e6); // convert to microseconds
+        // calculate ORB bag of words features and add to database
+        cv::cvtColor(color_image, gray_image, cv::COLOR_BGR2GRAY);
+        orb->detectAndCompute(gray_image, mask, keypoints, descriptors);
+        frame_id = orb_db_.add(descriptors);
 
-        // Create a Frame with the image, timestamp, and camera calibration
-        auto frame = std::make_shared<Frame>(
-            color_image,
-            frame_id,
-            timestamp,
-            camera_intrinsics_,
-            distortion_coeffs_,
-            last_odom_->pose.pose
-        );
+        // size_t frame_id = static_cast<size_t>(timestamp * 1e6); // convert to microseconds
 
-        RCLCPP_INFO(this->get_logger(), "Frame %zu received at time %.2f", frame_id, timestamp);
+        // // Create a Frame with the image, timestamp, and camera calibration
+        // auto frame = std::make_shared<Frame>(
+        //     color_image,
+        //     frame_id,
+        //     timestamp,
+        //     camera_intrinsics_,
+        //     distortion_coeffs_,
+        //     last_odom_->pose.pose
+        // );
 
-        // Cache frame and odometry
-        frames_cache_.push_back(frame);
+        RCLCPP_INFO(this->get_logger(), "Frame %u received at time %.2f", frame_id, timestamp);
+
+        // // Cache frame and odometry
+        // frames_cache_.push_back(frame);
 
 #ifdef PUB_KEYPOINTS_IMG
         cv::Mat img_keypoints;
-        cv::drawKeypoints(color_image, frame->keypoints_, img_keypoints, cv::Scalar(0, 255, 0), cv::DrawMatchesFlags::DEFAULT);
+        cv::drawKeypoints(color_image, keypoints, img_keypoints, cv::Scalar(0, 255, 0), cv::DrawMatchesFlags::DEFAULT);
         auto keypoints_img_msg = cv_bridge::CvImage(
             last_color_image_->header, sensor_msgs::image_encodings::BGR8, img_keypoints).toImageMsg();
         keypoints_img_msg->header.stamp = last_color_image_->header.stamp;
