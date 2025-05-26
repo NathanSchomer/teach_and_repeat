@@ -72,8 +72,8 @@ bool CreateVocabServer::save_vocabulary(const std::string &path)
 {
     // branching factor and depth levels 
     // TODO: parameterize these
-    const int k = 9;
-    const int L = 3;
+    const int k = 10;
+    const int L = 5;
     const WeightingType weight = TF_IDF;
     const ScoringType scoring = L1_NORM;
 
