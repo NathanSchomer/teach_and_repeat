@@ -1,5 +1,5 @@
 /**
- * @file teach_server.cpp
+ * @file repeat_server.cpp
  * @brief Implementation of the RepeatServer node for the teach_and_repeat package.
  *
  * This node implements the server side of a teach-and-repeat action in ROS 2.
@@ -34,7 +34,7 @@ RepeatServer::RepeatServer() : Node("repeat_server")
     // std::string vocab_path = ament_index_cpp::get_package_share_directory("teach_and_repeat") + "/" + vocabulary_path_.as_string();
     // OrbVocabulary vocab(vocab_path);
 
-    // RCLCPP_INFO(this->get_logger(), "Vocabulary loaded with %u words", vocab.size());
+    // RCLCPP_INFO(this->get_logger(), "Vocabulary loteachaded with %u words", vocab.size());
     // orb_db_ = OrbDatabase(vocab, false, 0); // false = do not use direct index
 
     // check that vocab path exists
@@ -90,12 +90,12 @@ RepeatServer::RepeatServer() : Node("repeat_server")
 
     // Create a publisher for the keypoints image.
     keypoints_img_pub_ = this->create_publisher<sensor_msgs::msg::Image>(
-        "/teach/keypoints_image", 10);
+        "/repeat/keypoints_image", 10);
 
     // Create the action server.
     action_server_ = rclcpp_action::create_server<Repeat>(
         this,
-        "teach",
+        "repeat",
         std::bind(&RepeatServer::handle_goal, this, _1, _2),
         std::bind(&RepeatServer::handle_cancel, this, _1),
         std::bind(&RepeatServer::handle_accepted, this, _1)
@@ -106,7 +106,7 @@ rclcpp_action::GoalResponse RepeatServer::handle_goal(
     const rclcpp_action::GoalUUID & uuid,
     std::shared_ptr<const Repeat::Goal> goal)
 {
-    RCLCPP_INFO(this->get_logger(), "Received teacher request with path name: %s", goal->path_name.c_str());
+    RCLCPP_INFO(this->get_logger(), "Received repeat request with path name: %s", goal->path_name.c_str());
     (void)uuid;
     (void)goal;
     return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
@@ -115,14 +115,14 @@ rclcpp_action::GoalResponse RepeatServer::handle_goal(
 rclcpp_action::CancelResponse RepeatServer::handle_cancel(
     const std::shared_ptr<GoalHandleRepeat> goal_handle)
 {
-    RCLCPP_INFO(this->get_logger(), "Received teach cancel request");
+    RCLCPP_INFO(this->get_logger(), "Received repeat cancel request");
     (void)goal_handle;
     return rclcpp_action::CancelResponse::ACCEPT;
 }
 
 void RepeatServer::handle_accepted(const std::shared_ptr<GoalHandleRepeat> goal_handle)
 {
-    RCLCPP_INFO(this->get_logger(), "Accepted teach request");
+    RCLCPP_INFO(this->get_logger(), "Accepted repeat request");
 
     load_descriptor_odom_pairs_("teach_path.yml", &saved_descriptors_, &saved_odom_poses_);
 
@@ -170,6 +170,8 @@ void RepeatServer::load_descriptor_odom_pairs_(
     const std::string& filename, std::vector<cv::Mat>* descriptors,
     std::vector<geometry_msgs::msg::Pose>* odom_poses)
 {
+    RCLCPP_INFO(this->get_logger(), "Loading descriptor-odom pairs from file: %s", filename.c_str());
+
     std::vector<std::tuple<cv::Mat, geometry_msgs::msg::Pose>> data;
     cv::FileStorage fs(filename, cv::FileStorage::READ);
 
@@ -178,13 +180,14 @@ void RepeatServer::load_descriptor_odom_pairs_(
         return;
     }
 
-    cv::FileNode frames = fs["frames"];
+    cv::FileNode frames = fs["pairs"];
     for (const auto& node : frames) {
-        cv::Mat descriptors;
+
+        cv::Mat curr_descriptors;
         cv::Vec3d position;
         cv::Vec4d orientation;
 
-        node["descriptors"] >> descriptors;
+        node["descriptors"] >> curr_descriptors;
         node["position"] >> position;
         node["orientation"] >> orientation;
 
@@ -197,17 +200,18 @@ void RepeatServer::load_descriptor_odom_pairs_(
         pose.orientation.z = orientation[2];
         pose.orientation.w = orientation[3];
 
-        data.emplace_back(descriptors.clone(), pose);
+        descriptors->emplace_back(curr_descriptors.clone());
+        odom_poses->emplace_back(pose);
     }
 
     fs.release();
-    RCLCPP_INFO(this->get_logger(), "Loaded %lu descriptor-odom pairs from %s", data.size(), filename.c_str());
+    RCLCPP_INFO(this->get_logger(), "Loaded %lu descriptor-odom pairs", descriptors->size());
     return;
 }
 
 void RepeatServer::execute_action(const std::shared_ptr<GoalHandleRepeat> goal_handle)
 {
-    RCLCPP_INFO(this->get_logger(), "Executing teach request");
+    RCLCPP_INFO(this->get_logger(), "Executing repeat request");
 
     rclcpp::Rate loop_rate(1);
     auto feedback = std::make_shared<Repeat::Feedback>();
@@ -224,6 +228,17 @@ void RepeatServer::execute_action(const std::shared_ptr<GoalHandleRepeat> goal_h
 
     std::vector<std::pair<cv::Mat, geometry_msgs::msg::Pose>> descriptor_odom_pairs;
 
+    // stack saved descriptors and keep track of indecies
+    std::vector<int> descriptor_offsets;
+    cv::Mat saved_descriptors_concat;
+    int offset = 0;
+
+    for (const auto& desc : saved_descriptors_) {
+        descriptor_offsets.push_back(offset);
+        saved_descriptors_concat.push_back(desc);
+        offset += desc.rows;
+    }
+
     // ROS Loop
     while (rclcpp::ok()) {
         if (goal_handle->is_canceling()) {
@@ -239,6 +254,7 @@ void RepeatServer::execute_action(const std::shared_ptr<GoalHandleRepeat> goal_h
 
         // Convert ROS image message to cv::Mat (BGR8)
         cv::Mat color_image = cv_bridge::toCvCopy(last_color_image_, sensor_msgs::image_encodings::BGR8)->image;
+        RCLCPP_INFO(this->get_logger(), "Received color image of size: %dx%d", color_image.cols, color_image.rows);
 
         rclcpp::Time now = this->now();
         double timestamp = static_cast<double>(now.nanoseconds()) / 1e9;
@@ -252,11 +268,19 @@ void RepeatServer::execute_action(const std::shared_ptr<GoalHandleRepeat> goal_h
             loop_rate.sleep();
             continue;
         }
+        RCLCPP_INFO(this->get_logger(), "Frame %u: Detected %lu keypoints", frame_id, keypoints.size());
 
         // match descriptors with saved descriptors... publish pose of that frame's odometry
         cv::BFMatcher matcher(cv::NORM_HAMMING);
         std::vector<cv::DMatch> matches;
-        matcher.match(descriptors, saved_descriptors_, matches);
+        matcher.match(descriptors, saved_descriptors_concat, matches);
+        RCLCPP_INFO(this->get_logger(), "Frame %u: Found %lu matches", frame_id, matches.size());
+
+        if (matches.empty()) {
+            RCLCPP_WARN(this->get_logger(), "No matches found for frame %u", frame_id);
+            loop_rate.sleep();
+            continue;
+        }
 
         cv::DMatch best_match;
         float best_distance = std::numeric_limits<float>::max();
@@ -268,9 +292,16 @@ void RepeatServer::execute_action(const std::shared_ptr<GoalHandleRepeat> goal_h
             }
         }
 
-        auto best_idx = best_match.trainIdx;
-        auto best_odom = saved_odom_poses_[best_idx];
-        RCLCPP_INFO(this->get_logger(), "Best match found at index %lu", best_idx);
+        int trainIdx = best_match.trainIdx;
+        int frame_idx = std::upper_bound(descriptor_offsets.begin(), descriptor_offsets.end(), trainIdx) - descriptor_offsets.begin() - 1;
+        auto best_odom = saved_odom_poses_[frame_idx];
+        RCLCPP_INFO(this->get_logger(), "Best match found at index %lu", frame_idx);
+
+        auto best_match_pose = best_odom;
+        RCLCPP_INFO(this->get_logger(), "Best match pose: position(%.2f, %.2f, %.2f), orientation(%.2f, %.2f, %.2f, %.2f)",
+                    best_match_pose.position.x, best_match_pose.position.y, best_match_pose.position.z,
+                    best_match_pose.orientation.x, best_match_pose.orientation.y,
+                    best_match_pose.orientation.z, best_match_pose.orientation.w);
 
 
 #ifdef PUB_KEYPOINTS_IMG
