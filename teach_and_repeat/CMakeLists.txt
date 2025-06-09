@@ -36,12 +36,31 @@ add_executable(teach_server
   src/frame.cpp
 )
 
+add_executable(repeat_server
+  src/repeat_server.cpp
+  src/frame.cpp
+)
+
 add_executable(create_vocab_server
   src/create_vocab_server.cpp
 )
 
 # Link dependencies
 ament_target_dependencies(teach_server
+  ament_index_cpp
+  rclcpp
+  rclcpp_action
+  std_msgs
+  sensor_msgs
+  nav_msgs
+  message_filters
+  cv_bridge
+  teach_and_repeat_interfaces
+  dbow2
+  tf2
+)
+
+ament_target_dependencies(repeat_server
   ament_index_cpp
   rclcpp
   rclcpp_action
@@ -70,9 +89,14 @@ ament_target_dependencies(create_vocab_server
   tf2
 )
 
-# Link OpenCV explicitly
 target_link_libraries(teach_server ${OpenCV_LIBS})
 target_include_directories(teach_server PRIVATE
+  ${cv_bridge_INCLUDE_DIRS}
+  ${OpenCV_INCLUDE_DIRS}
+)
+
+target_link_libraries(repeat_server ${OpenCV_LIBS})
+target_include_directories(repeat_server PRIVATE
   ${cv_bridge_INCLUDE_DIRS}
   ${OpenCV_INCLUDE_DIRS}
 )
@@ -86,6 +110,10 @@ target_include_directories(create_vocab_server PRIVATE
 
 # Install targets
 install(TARGETS teach_server
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+install(TARGETS repeat_server
   DESTINATION lib/${PROJECT_NAME}
 )
 

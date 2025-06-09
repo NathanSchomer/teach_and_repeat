@@ -1,6 +1,6 @@
 /**
  * @file teach_server.cpp
- * @brief Implementation of the TeachServer node for the teach_and_repeat package.
+ * @brief Implementation of the RepeatServer node for the teach_and_repeat package.
  *
  * This node implements the server side of a teach-and-repeat action in ROS 2.
  *
@@ -8,13 +8,13 @@
  * @date 2025-05-22
  */
 
-#include "teach_and_repeat/teach_server.hpp"
+#include "teach_and_repeat/repeat_server.hpp"
 
 // using std::placeholders::_1;
 // using std::placeholders::_2;
 // using std::placeholders::_3;
 
-TeachServer::TeachServer() : Node("teach_server")
+RepeatServer::RepeatServer() : Node("repeat_server")
 {
     // setup parameters
     this->declare_parameter("img_color_topic", "/camera_down/color/image_raw");
@@ -56,7 +56,7 @@ TeachServer::TeachServer() : Node("teach_server")
     // subscribe to camera info 
     camera_info_sub_ = this->create_subscription<sensor_msgs::msg::CameraInfo>(
         camera_info_topic_.as_string(), 10,
-        std::bind(&TeachServer::camera_info_callback, this, _1));
+        std::bind(&RepeatServer::camera_info_callback, this, _1));
 
 #ifdef SYNCRONIZED_SUBS
     // TODO: broken and idk why :(
@@ -75,17 +75,17 @@ TeachServer::TeachServer() : Node("teach_server")
 
     // sync_->setAgePenalty(1000);
     sync_->registerCallback(
-        std::bind(&TeachServer::SyncCallback, this, _1, _2));
+        std::bind(&RepeatServer::SyncCallback, this, _1, _2));
 #else
     img_color_sub_ = this->create_subscription<sensor_msgs::msg::Image>(
         img_color_topic_.as_string(), 10,
-        std::bind(&TeachServer::img_color_callback, this, _1));
+        std::bind(&RepeatServer::img_color_callback, this, _1));
     img_depth_sub_ = this->create_subscription<sensor_msgs::msg::Image>(
         img_depth_topic_.as_string(), 10,
-        std::bind(&TeachServer::img_depth_callback, this, _1));
+        std::bind(&RepeatServer::img_depth_callback, this, _1));
     odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
         odom_topic_.as_string(), 10,
-        std::bind(&TeachServer::odom_callback, this, _1));
+        std::bind(&RepeatServer::odom_callback, this, _1));
 #endif
 
     // Create a publisher for the keypoints image.
@@ -93,18 +93,18 @@ TeachServer::TeachServer() : Node("teach_server")
         "/teach/keypoints_image", 10);
 
     // Create the action server.
-    action_server_ = rclcpp_action::create_server<Teach>(
+    action_server_ = rclcpp_action::create_server<Repeat>(
         this,
         "teach",
-        std::bind(&TeachServer::handle_goal, this, _1, _2),
-        std::bind(&TeachServer::handle_cancel, this, _1),
-        std::bind(&TeachServer::handle_accepted, this, _1)
+        std::bind(&RepeatServer::handle_goal, this, _1, _2),
+        std::bind(&RepeatServer::handle_cancel, this, _1),
+        std::bind(&RepeatServer::handle_accepted, this, _1)
     );
 }
 
-rclcpp_action::GoalResponse TeachServer::handle_goal(
+rclcpp_action::GoalResponse RepeatServer::handle_goal(
     const rclcpp_action::GoalUUID & uuid,
-    std::shared_ptr<const Teach::Goal> goal)
+    std::shared_ptr<const Repeat::Goal> goal)
 {
     RCLCPP_INFO(this->get_logger(), "Received teacher request with path name: %s", goal->path_name.c_str());
     (void)uuid;
@@ -112,23 +112,27 @@ rclcpp_action::GoalResponse TeachServer::handle_goal(
     return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
 }
 
-rclcpp_action::CancelResponse TeachServer::handle_cancel(
-    const std::shared_ptr<GoalHandleTeach> goal_handle)
+rclcpp_action::CancelResponse RepeatServer::handle_cancel(
+    const std::shared_ptr<GoalHandleRepeat> goal_handle)
 {
     RCLCPP_INFO(this->get_logger(), "Received teach cancel request");
     (void)goal_handle;
     return rclcpp_action::CancelResponse::ACCEPT;
 }
 
-void TeachServer::handle_accepted(const std::shared_ptr<GoalHandleTeach> goal_handle)
+void RepeatServer::handle_accepted(const std::shared_ptr<GoalHandleRepeat> goal_handle)
 {
     RCLCPP_INFO(this->get_logger(), "Accepted teach request");
+
+    load_descriptor_odom_pairs_("teach_path.yml", &saved_descriptors_, &saved_odom_poses_);
+
+    RCLCPP_INFO(this->get_logger(), "Loaded %lu descriptor-odom pairs from file", saved_descriptors_.size());
 
     auto execute_in_thread  = [this, goal_handle]() { return this->execute_action(goal_handle); };
     std::thread{execute_in_thread}.detach();
 }
 
-void TeachServer::camera_info_callback(const sensor_msgs::msg::CameraInfo::SharedPtr msg)
+void RepeatServer::camera_info_callback(const sensor_msgs::msg::CameraInfo::SharedPtr msg)
 {
     camera_intrinsics_ = cv::Mat(3, 3, CV_64F, msg->k.data()).clone();
     distortion_coeffs_ = cv::Mat(1, 5, CV_64F, msg->d.data()).clone();
@@ -137,7 +141,7 @@ void TeachServer::camera_info_callback(const sensor_msgs::msg::CameraInfo::Share
 }
 
 #ifdef SYNCRONIZED_SUBS
-void TeachServer::SyncCallback(
+void RepeatServer::SyncCallback(
     const sensor_msgs::msg::Image::ConstSharedPtr& color_msg,
     const sensor_msgs::msg::Image::ConstSharedPtr& depth_msg)
 {
@@ -146,83 +150,68 @@ void TeachServer::SyncCallback(
     last_depth_image_ = std::const_pointer_cast<sensor_msgs::msg::Image>(depth_msg);
 }
 #else
-void TeachServer::img_color_callback(const sensor_msgs::msg::Image::SharedPtr msg)
+void RepeatServer::img_color_callback(const sensor_msgs::msg::Image::SharedPtr msg)
 {
     last_color_image_ = msg;
 }
 
-void TeachServer::img_depth_callback(const sensor_msgs::msg::Image::SharedPtr msg)
+void RepeatServer::img_depth_callback(const sensor_msgs::msg::Image::SharedPtr msg)
 {
     last_depth_image_ = msg;
 }
 
-void TeachServer::odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg)
+void RepeatServer::odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg)
 {
     last_odom_ = msg;
 }
 #endif
 
-void TeachServer::save_frames_cache_()
+void RepeatServer::load_descriptor_odom_pairs_(
+    const std::string& filename, std::vector<cv::Mat>* descriptors,
+    std::vector<geometry_msgs::msg::Pose>* odom_poses)
 {
-    // RCLCPP_INFO(this->get_logger(), "Saving DBOW2 database to disk.");
-    // orb_db_.save("dbow2_database.yml.gz");
-    // TODO: save database
+    std::vector<std::tuple<cv::Mat, geometry_msgs::msg::Pose>> data;
+    cv::FileStorage fs(filename, cv::FileStorage::READ);
 
-    // if (frames_cache_.empty()) {
-    //     RCLCPP_WARN(this->get_logger(), "No frames to save");
-    //     return;
-    // }
-
-    // // todo add parameter for save path
-    // cv::FileStorage fs("frames.yml", cv::FileStorage::WRITE);
-    // fs << "frames" << "[";
-    // for (const auto& frame : frames_cache_) {
-    //     RCLCPP_INFO(this->get_logger(), "Saving frame %zu", frame->id_);
-    //     fs << "{";
-    //     teach_and_repeat::saveFrame(*frame, fs);
-    //     fs << "}";
-    // }
-    // fs << "]";
-    // fs.release();
-}
-
-void TeachServer::save_descriptor_odom_pairs_(
-    const std::string &filename,
-    const std::vector<std::pair<cv::Mat, geometry_msgs::msg::Pose>> &data)
-{
-    cv::FileStorage fs(filename, cv::FileStorage::WRITE);
-    fs << "pairs" << "[";
-    for (const auto &[desc, pose] : data) {
-        cv::Vec3d position(
-            pose.position.x,
-            pose.position.y,
-            pose.position.z
-        );
-        cv::Vec4d orientation(
-            pose.orientation.x,
-            pose.orientation.y,
-            pose.orientation.z,
-            pose.orientation.w
-        );
-        fs << "{";
-        fs << "descriptors" << desc;
-        fs << "position" << position;
-        fs << "orientation" << orientation;
-        fs << "}";
+    if (!fs.isOpened()) {
+        RCLCPP_ERROR(this->get_logger(), "Failed to open descriptor file: %s", filename.c_str());
+        return;
     }
-    fs << "]";
-    fs.release();
 
-    RCLCPP_INFO(this->get_logger(), "Saved %lu frames to %s", data.size(), filename.c_str());
+    cv::FileNode frames = fs["frames"];
+    for (const auto& node : frames) {
+        cv::Mat descriptors;
+        cv::Vec3d position;
+        cv::Vec4d orientation;
+
+        node["descriptors"] >> descriptors;
+        node["position"] >> position;
+        node["orientation"] >> orientation;
+
+        geometry_msgs::msg::Pose pose;
+        pose.position.x = position[0];
+        pose.position.y = position[1];
+        pose.position.z = position[2];
+        pose.orientation.x = orientation[0];
+        pose.orientation.y = orientation[1];
+        pose.orientation.z = orientation[2];
+        pose.orientation.w = orientation[3];
+
+        data.emplace_back(descriptors.clone(), pose);
+    }
+
+    fs.release();
+    RCLCPP_INFO(this->get_logger(), "Loaded %lu descriptor-odom pairs from %s", data.size(), filename.c_str());
+    return;
 }
 
-void TeachServer::execute_action(const std::shared_ptr<GoalHandleTeach> goal_handle)
+void RepeatServer::execute_action(const std::shared_ptr<GoalHandleRepeat> goal_handle)
 {
     RCLCPP_INFO(this->get_logger(), "Executing teach request");
 
     rclcpp::Rate loop_rate(1);
-    auto feedback = std::make_shared<Teach::Feedback>();
-    auto result = std::make_shared<Teach::Result>();
+    auto feedback = std::make_shared<Repeat::Feedback>();
+    auto result = std::make_shared<Repeat::Result>();
     int64_t frame_count = 0;
 
     // Initialize ORB feature detector
@@ -238,7 +227,6 @@ void TeachServer::execute_action(const std::shared_ptr<GoalHandleTeach> goal_han
     // ROS Loop
     while (rclcpp::ok()) {
         if (goal_handle->is_canceling()) {
-            save_descriptor_odom_pairs_("teach_path.yml", descriptor_odom_pairs);
             goal_handle->canceled(result);
             return;
         }
@@ -265,41 +253,29 @@ void TeachServer::execute_action(const std::shared_ptr<GoalHandleTeach> goal_han
             continue;
         }
 
-        descriptor_odom_pairs.emplace_back(descriptors.clone(), last_odom_->pose.pose);
-        RCLCPP_INFO(this->get_logger(), "Stored frame %ld with %ld descriptors", frame_count, descriptors.rows);
+        // match descriptors with saved descriptors... publish pose of that frame's odometry
+        cv::BFMatcher matcher(cv::NORM_HAMMING);
+        std::vector<cv::DMatch> matches;
+        matcher.match(descriptors, saved_descriptors_, matches);
 
+        cv::DMatch best_match;
+        float best_distance = std::numeric_limits<float>::max();
 
-        // frame_id = orb_db_.add(descriptors);
+        for (const auto& match : matches) {
+            if (match.distance < best_distance) {
+                best_distance = match.distance;
+                best_match = match;
+            }
+        }
 
-        // size_t frame_id = static_cast<size_t>(timestamp * 1e6); // convert to microseconds
+        auto best_idx = best_match.trainIdx;
+        auto best_odom = saved_odom_poses_[best_idx];
+        RCLCPP_INFO(this->get_logger(), "Best match found at index %lu", best_idx);
 
-        // // Create a Frame with the image, timestamp, and camera calibration
-        // auto frame = std::make_shared<Frame>(
-        //     color_image,
-        //     frame_id,
-        //     timestamp,
-        //     camera_intrinsics_,
-        //     distortion_coeffs_,
-        //     last_odom_->pose.pose
-        // );
-
-        // RCLCPP_INFO(this->get_logger(), "Frame %u received at time %.2f", frame_id, timestamp);
-
-        // // Cache frame and odometry
-        // frames_cache_.push_back(frame);
 
 #ifdef PUB_KEYPOINTS_IMG
-        cv::Mat img_keypoints;
-        cv::drawKeypoints(color_image, keypoints, img_keypoints, cv::Scalar(0, 255, 0), cv::DrawMatchesFlags::DEFAULT);
-        auto keypoints_img_msg = cv_bridge::CvImage(
-            last_color_image_->header, sensor_msgs::image_encodings::BGR8, img_keypoints).toImageMsg();
-        keypoints_img_msg->header.stamp = last_color_image_->header.stamp;
-        keypoints_img_msg->header.frame_id = last_color_image_->header.frame_id;
-        keypoints_img_pub_->publish(*keypoints_img_msg);
+        // TODO: publish image of current image + best match image
 #endif
-
-        // TODO: use camera cal to get 3d points in world frame
-
         feedback->n_keyframes = ++frame_count;
         goal_handle->publish_feedback(feedback);
 
@@ -307,13 +283,13 @@ void TeachServer::execute_action(const std::shared_ptr<GoalHandleTeach> goal_han
     }
 
     if (rclcpp::ok()) {
-        RCLCPP_INFO(this->get_logger(), "Teach request completed successfully");
-        auto result = std::make_shared<Teach::Result>();
+        RCLCPP_INFO(this->get_logger(), "Repeat request completed successfully");
+        auto result = std::make_shared<Repeat::Result>();
         result->saved_path = true;
         goal_handle->succeed(result);
     } else {
-        RCLCPP_ERROR(this->get_logger(), "Teach request failed");
-        auto result = std::make_shared<Teach::Result>();
+        RCLCPP_ERROR(this->get_logger(), "Repeat request failed");
+        auto result = std::make_shared<Repeat::Result>();
         result->saved_path = false;
         goal_handle->abort(result);
         return;
@@ -327,7 +303,7 @@ int main(int argc, char **argv)
     rclcpp::init(argc, argv);
 
     // Create the server node.
-    auto node = std::make_shared<TeachServer>();
+    auto node = std::make_shared<RepeatServer>();
 
     // Spin the node to process callbacks.
     rclcpp::spin(node);

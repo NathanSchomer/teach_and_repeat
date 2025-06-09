@@ -1,5 +1,5 @@
 /**
- * @file teach_server.hpp
+ * @file repeat_server.hpp
  * @brief Declaration of the TeachServer node for the teach_and_repeat package.
  *
  * This node implements the server side of a teach-and-repeat action in ROS 2.
@@ -36,7 +36,7 @@
 #include <cv_bridge/cv_bridge.hpp>
 #include <opencv2/opencv.hpp>
 
-#include "teach_and_repeat_interfaces/action/teach.hpp"
+#include "teach_and_repeat_interfaces/action/repeat.hpp"
 #include "teach_and_repeat/frame.hpp"
 #include "DBoW2/DBoW2.h"
 #include "ament_index_cpp/get_package_share_directory.hpp"
@@ -48,25 +48,25 @@ using std::placeholders::_2;
 #undef SYNCRONIZED_SUBS
 #define PUB_KEYPOINTS_IMG
 
-class TeachServer : public rclcpp::Node
+class RepeatServer : public rclcpp::Node
 {
 private:
     OrbDatabase orb_db_;
 
-    using Teach = teach_and_repeat_interfaces::action::Teach;
-    using GoalHandleTeach = rclcpp_action::ServerGoalHandle<Teach>;
+    using Repeat = teach_and_repeat_interfaces::action::Repeat;
+    using GoalHandleRepeat = rclcpp_action::ServerGoalHandle<Repeat>;
 
-    rclcpp_action::Server<Teach>::SharedPtr action_server_;
+    rclcpp_action::Server<Repeat>::SharedPtr action_server_;
 
     rclcpp_action::GoalResponse handle_goal(
         const rclcpp_action::GoalUUID & uuid,
-        std::shared_ptr<const Teach::Goal> goal);
+        std::shared_ptr<const Repeat::Goal> goal);
 
     rclcpp_action::CancelResponse handle_cancel(
-        const std::shared_ptr<GoalHandleTeach> goal_handle);
+        const std::shared_ptr<GoalHandleRepeat> goal_handle);
 
-    void handle_accepted(const std::shared_ptr<GoalHandleTeach> goal_handle);
-    void execute_action(const std::shared_ptr<GoalHandleTeach> goal_handle);
+    void handle_accepted(const std::shared_ptr<GoalHandleRepeat> goal_handle);
+    void execute_action(const std::shared_ptr<GoalHandleRepeat> goal_handle);
 
     // file handle for saving keypoints + odometry
     std::ofstream path_file_;
@@ -91,11 +91,12 @@ private:
     cv::Mat camera_intrinsics_;
     cv::Mat distortion_coeffs_;
 
+    std::vector<cv::Mat> saved_descriptors_;
+    std::vector<geometry_msgs::msg::Pose> saved_odom_poses_;
+
     std::shared_ptr<rclcpp::Subscription<sensor_msgs::msg::CameraInfo>> camera_info_sub_;
     void camera_info_callback(const sensor_msgs::msg::CameraInfo::SharedPtr msg);
-    void save_frames_cache_();
-    void save_descriptor_odom_pairs_(const std::string &filename, const std::vector<std::pair<cv::Mat, geometry_msgs::msg::Pose>> &pairs);
-
+    void load_descriptor_odom_pairs_(const std::string& filename, std::vector<cv::Mat>* descriptors, std::vector<geometry_msgs::msg::Pose>* odom_poses);
 #ifdef SYNCRONIZED_SUBS
     std::shared_ptr<message_filters::Subscriber<sensor_msgs::msg::Image>> img_color_sub_;
     std::shared_ptr<message_filters::Subscriber<sensor_msgs::msg::Image>> img_depth_sub_;
@@ -122,5 +123,5 @@ private:
 #endif
 
 public:
-    TeachServer();
+    RepeatServer();
 };

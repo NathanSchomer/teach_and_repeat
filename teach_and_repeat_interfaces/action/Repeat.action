@@ -1,0 +1,8 @@
+# goal
+string path_name
+---
+# result
+bool saved_path
+---
+# feedback
+int64 n_keyframes
