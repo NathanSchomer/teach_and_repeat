@@ -22,32 +22,43 @@
 ## How to use this code
 
 ### 1. Move into ros workspace
-```
+```bash
 cd ~/ros2_ws
 ```
 
 ### 2. Clone respository/extract archive into ros workspace and update submodules
-```
+```bash
 git clone https://github.com/nathanschomer/teach_and_repeat.git ./src/teach_and_repeat
 bash ./src/teach_and_repeat/utils/setup.sh
 ```
 
 ### 3. Build and source
-```
+```bash
 colcon build
 source ./install/setup.bash
 ```
 
-### 5. Launch Teacher
-
-```
+### 5. Launch Teacher and send Goal
+```bash
 ros2 launch teach_and_repeat teach_server.py
 ```
 
-### 6. Send Goal to Teacher
-
-this will save key frames to ./frames.yml
-
+```bash
+ros2 action send_goal /teach teach_and_repeat_interfaces/action/Teach "{path_name: 'teach_path.yml'}"
 ```
-ros2 action send_goal /teach teach_and_repeat_interfaces/action/Teach "{path_name: 'frames.yml'}"
+
+### 5. Launch Repeater and send Goal
+```bash
+ros2 launch teach_and_repeat repeat_server.py
 ```
+
+```bash
+ros2 action send_goal /repeat teach_and_repeat_interfaces/action/Repeat "{path_name: 'teach_path.yml'}"
+```
+
+### 6. Run rviz
+```bash
+ros2 run rviz2 rviz2
+```
+
+Open the rviz config file provided in teach_and_repeat/teach_and_repeat/config/config.rviz
